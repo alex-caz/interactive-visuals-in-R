@@ -1,0 +1,162 @@
+---
+title: "Show/Hide Data Labels Across Series on Hover"
+subtitle: "Package: Highcharter"
+output: html_document
+---
+
+Input file consists of mock survey responses to likert-scale questions. 
+
+```{r setup}
+library(readxl)           
+library(dplyr)            
+library(purrr)            
+library(tidyr)            
+library(highcharter)      #for data visualization
+```
+
+```{r read in raw survey data}
+
+#NOTE: Survey responses begin on the input file's 3rd row.
+#      Row 1 consists of the column headers ('ResearchID', 'Age_Range', and 'Q1'-'Q3')
+#      Row 2 consists of the question prompts associated with each question number ('Prompt 1'-'Prompt 3')
+
+#file path
+survey_data_file <- "~/raw_survey_data.xlsx"
+
+#read column header and question prompt rows (for future plot labeling)
+colheaders_qprompts <- read_xlsx(
+                         survey_data_file,
+                         n_max = 1
+                       )
+
+#save column names
+col_header_row <- colnames(colheaders_qprompts)
+
+#create a data frame, keeping only the question numbers in the column header row and their associated question prompts
+qnums_qprompts <- colheaders_qprompts %>% 
+                    select(-ResearchID,-Age_Range) %>% 
+                    t() %>% 
+                    as.data.frame()
+
+qnums_qprompts$qnum <- rownames(qnums_qprompts)
+colnames(qnums_qprompts)[1] <- "qprompt"
+
+#read the rest of the rows, using 'col_header_row' to set the column names
+survey_data <- read_xlsx(
+                 survey_data_file,
+                 skip = 2,
+                 col_names = col_header_row,
+                 col_types = c(rep("text",5))   #make sure all cols are read in as character types
+               )      
+```
+
+```{r read in scale option data}
+#the scale_options sheet contains the option names for each scale used in the survey 
+#ordered from most positive to most negative (from top to bottom)
+scale_opt_vals <- read_xlsx(
+                    survey_data_file,
+                    sheet = "scale_options"
+                  )
+```
+
+```{r hardcode NAs}
+##hardcode NA's as 'No response'
+survey_data[is.na(survey_data)] <- "No response"
+```
+
+```{r factor scale option cols}
+#factor to set stack order we want when plotting stacked bars
+for (cname in colnames(survey_data[,3:4])) {
+  survey_data[[cname]] <- factor(
+                            survey_data[[cname]], 
+                            as.vector(c("No response", unlist(scale_opt_vals[1:5,1]))),
+                            ordered = T
+                          )
+}
+
+for (cname in colnames(survey_data[,5])) {
+  survey_data[[cname]] <- factor(
+                            survey_data[[cname]], 
+                            as.vector(c("No response", unlist(scale_opt_vals[6:10,1]))),
+                            ordered = T
+                          )
+}
+```
+
+```{r get count & percentage per scale option per question prompt}
+response_breakdown_list <- map(
+                             survey_data[,3:5], 
+                             ~ count(tibble(scale_option = .x), scale_option, .drop=F) %>% 
+                               mutate(freq = round((n / sum(n) * 100),2))
+                           )
+
+response_breakdown <- do.call("rbind", response_breakdown_list)
+
+#save question numbers as a column in 'response_breakdown'
+response_breakdown$qnum <- rownames(response_breakdown) %>% substr(1,nchar(.)-2)
+```
+
+```{r merge question prompts to breakdown df}
+response_breakdown_final <- merge(response_breakdown, qnums_qprompts, by = "qnum", all.x = T)
+```
+
+```{r hc function}
+plot_hc <- function(x) { 
+             x %>%
+               hchart(
+                 'bar',
+                 stacking = 'normal',
+                 hcaes(
+                   x = 'qprompt',
+                   y = 'freq',
+                   group = 'scale_option'
+                  )
+                ) %>%
+                hc_colors(
+                  c(
+                    "#000000",             #no response
+                    "#3498db","#7fb3d5",   #positives
+                    "#99a3a4",             #neutral
+                    "#f0b27a","#d35400"    #negatives
+                  )
+                ) %>%
+                hc_xAxis(
+                  title = NULL,
+                  labels = list(style = list(fontSize = "15px"))
+                ) %>%
+                hc_yAxis(max=100, title = list(text = "% out of total survey takers")) %>%
+                hc_plotOptions(
+                  bar = list(groupPadding = 0),
+                  series = list(
+                    #enable and format data labels
+                    dataLabels = list(
+                      enabled = T,
+                      format= '{point.y}%'
+                    ),
+                    #set interactive events
+                    events= list(
+                      #default to hidden data labels after chart is loaded
+                      afterAnimate = JS("function() { this.dataLabelsGroup.hide(); }"),
+                      #set 'show data labels' when mouse hovers over series
+                      mouseOver = JS("function() { this.dataLabelsGroup.show(); }"),
+                      #set 'hide data labels' when mouse not on series
+                      mouseOut = JS("function() { this.dataLabelsGroup.hide(); }")
+                    ),
+                    states = list(
+                      inactive = list(opacity = 0.9)
+                    )
+                  )
+                ) %>%
+                hc_tooltip(enabled = F) %>%
+                hc_legend(reversed = T) %>%
+                hc_size(height = 300)
+           }       
+```
+
+```{r}
+plot_q <- response_breakdown_final %>% 
+            filter(qnum %in% c("Q1","Q2")) 
+
+plot_hc(plot_q)
+```
+
