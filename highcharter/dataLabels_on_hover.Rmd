@@ -136,11 +136,20 @@ plot_hc <- function(x) {
                     #set interactive events
                     events= list(
                       #default to hidden data labels after chart is loaded
-                      afterAnimate = JS("function() { this.dataLabelsGroup.hide(); }"),
+                      afterAnimate = JS("function() { $.each(this.data, function(i, point){
+                                                        point.dataLabel.hide();
+                                                      });
+                                                    }"),
                       #set 'show data labels' when mouse hovers over series
-                      mouseOver = JS("function() { this.dataLabelsGroup.show(); }"),
+                      mouseOver = JS("function() { $.each(this.data, function(i, point){
+                                                        point.dataLabel.show();
+                                                      });
+                                                 }"),
                       #set 'hide data labels' when mouse not on series
-                      mouseOut = JS("function() { this.dataLabelsGroup.hide(); }")
+                      mouseOut = JS("function() { $.each(this.data, function(i, point){
+                                                        point.dataLabel.hide();
+                                                      });
+                                                }")
                     ),
                     states = list(
                       inactive = list(opacity = 0.9)
