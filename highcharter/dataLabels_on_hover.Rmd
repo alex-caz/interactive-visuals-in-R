@@ -131,7 +131,8 @@ plot_hc <- function(x) {
                     #enable and format data labels
                     dataLabels = list(
                       enabled = T,
-                      format= '{point.y}%'
+                      format= '{point.y}%',
+                      allowOverlap = T
                     ),
                     #set interactive events
                     events= list(
